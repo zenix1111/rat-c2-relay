@@ -61,9 +61,17 @@ app.get('/api/data/:agentId', (req, res) => {
     res.json(data);
 });
 
-// Admin fetches all agents
+// Admin fetches all agents (with computed status)
 app.get('/api/agents', (req, res) => {
-    const list = Array.from(agents.values());
+    const now = Date.now();
+    const list = Array.from(agents.values()).map(agent => {
+        const lastSeen = new Date(agent.last_seen).getTime();
+        const ageSec = (now - lastSeen) / 1000;
+        return {
+            ...agent,
+            status: ageSec < 30 ? 'Online' : 'Offline'
+        };
+    });
     res.json(list);
 });
 
