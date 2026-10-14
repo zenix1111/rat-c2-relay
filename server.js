@@ -21,6 +21,20 @@ app.get('/', (req, res) => {
 app.post('/api/register', (req, res) => {
     const info = req.body;
     const id = info.id || uuidv4();
+
+    // One entry per physical machine: drop any earlier session for the same
+    // hostname + username so restarts don't pile up duplicates.
+    for (const [existingId, agent] of agents.entries()) {
+        if (existingId !== id &&
+            agent.hostname === info.hostname &&
+            agent.username === info.username) {
+            agents.delete(existingId);
+            responses.delete(existingId);
+            commands.delete(existingId);
+            console.log(`[PRUNE] removed stale session ${existingId} (${info.username}@${info.hostname})`);
+        }
+    }
+
     agents.set(id, { ...info, id, last_seen: new Date().toISOString() });
     console.log(`[REGISTER] ${info.username}@${info.hostname} (${id})`);
     res.json({ success: true, id });
